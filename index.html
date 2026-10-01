@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SaaS 管理ポータル（モック）</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2333508f'/%3E%3Cpath d='M9 11h14M9 16h14M9 21h9' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Personal SaaS Portal</p>
+          <h1>SaaS 管理ポータル</h1>
+        </div>
+        <p class="mock-badge">モック：すべて架空の認証情報</p>
+      </header>
+
+      <p class="mock-note">
+        表示しているログインIDとパスワードはすべて動作確認用の架空データです。平文のデータファイルや画面の伏せ字は認証情報の保護にはなりません。
+      </p>
+
+      <main class="container">
+        <div id="saveBar" class="save-bar" role="region" aria-label="保存の状態" hidden>
+          <p id="saveBarMessage" class="save-bar-message"></p>
+          <div class="save-bar-actions">
+            <button id="saveNowButton" type="button" class="primary-btn small">services.js に保存</button>
+            <button id="chooseFileButton" type="button" class="secondary-btn small">保存先を選び直す</button>
+            <button id="downloadButton" type="button" class="secondary-btn small">変更をダウンロード</button>
+          </div>
+        </div>
+
+        <section class="toolbar" aria-label="サービスの検索と絞り込み">
+          <label class="search-field">
+            <span class="label-text">検索</span>
+            <input
+              id="searchInput"
+              type="search"
+              placeholder="サービス名・カテゴリ・用途・メモ"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+
+          <label class="filter-field">
+            <span class="label-text">カテゴリ</span>
+            <select id="categoryFilter">
+              <option value="all">すべて</option>
+            </select>
+          </label>
+
+          <label class="favorite-field">
+            <input id="favoriteOnly" type="checkbox" />
+            <span>お気に入りのみ</span>
+          </label>
+        </section>
+
+        <p id="statusMessage" class="status-message" role="status"></p>
+
+        <section id="serviceList" class="service-grid" aria-label="サービス一覧"></section>
+      </main>
+    </div>
+
+    <dialog id="editDialog" class="edit-dialog" aria-labelledby="editTitle">
+      <form id="editForm" class="edit-form" novalidate>
+        <div class="dialog-header">
+          <h2 id="editTitle">サービスを編集</h2>
+          <button type="button" class="close-btn" data-dialog-close aria-label="閉じる">×</button>
+        </div>
+
+        <div class="dialog-body">
+          <div class="form-grid">
+            <label class="form-field span-2">
+              <span class="label-text">サービス名 <span class="required">必須</span></span>
+              <input id="editName" type="text" maxlength="2000" autocomplete="off" />
+            </label>
+
+            <label class="form-field">
+              <span class="label-text">カテゴリ</span>
+              <input id="editCategory" type="text" list="categoryOptions" maxlength="2000" autocomplete="off" />
+            </label>
+
+            <label class="form-field">
+              <span class="label-text">アカウントの用途</span>
+              <input id="editAccountLabel" type="text" list="accountLabelOptions" maxlength="2000" autocomplete="off" />
+            </label>
+
+            <label class="form-field span-2">
+              <span class="label-text">ログインURL <span class="required">必須</span></span>
+              <input id="editUrl" type="url" inputmode="url" maxlength="2000" autocomplete="off" spellcheck="false" placeholder="https://" />
+            </label>
+
+            <label class="form-field span-2">
+              <span class="label-text">ログインID</span>
+              <input id="editLoginId" type="text" maxlength="2000" autocomplete="off" spellcheck="false" />
+            </label>
+
+            <div class="form-field span-2">
+              <label class="label-text" for="editPassword">パスワード</label>
+              <div class="password-input">
+                <input id="editPassword" type="password" maxlength="2000" autocomplete="off" spellcheck="false" />
+                <button id="editPasswordToggle" type="button" class="inline-btn" aria-pressed="false">表示</button>
+              </div>
+            </div>
+
+            <label class="form-field span-2">
+              <span class="label-text">メモ</span>
+              <textarea id="editMemo" rows="3" maxlength="2000"></textarea>
+            </label>
+
+            <label class="favorite-field span-2">
+              <input id="editFavorite" type="checkbox" />
+              <span>お気に入り</span>
+            </label>
+          </div>
+
+          <p class="dialog-note">保存すると services.js に書き込まれます。入力するのは架空のデータだけにしてください。</p>
+          <p id="editError" class="form-error" role="alert"></p>
+        </div>
+
+        <div class="dialog-footer">
+          <button type="button" class="secondary-btn" data-dialog-close>キャンセル</button>
+          <button type="submit" class="primary-btn">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <datalist id="categoryOptions"></datalist>
+    <datalist id="accountLabelOptions"></datalist>
+
+    <div id="toast" class="toast" role="status"></div>
+
+    <noscript>
+      <p class="noscript">この画面を表示するには JavaScript を有効にしてください。</p>
+    </noscript>
+
+    <script src="services.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
