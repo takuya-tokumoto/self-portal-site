@@ -1275,7 +1275,7 @@ function loadInitialData() {
   if (data === undefined) {
     showLoadError(
       'services.js を読み込めませんでした',
-      'index.html と同じフォルダに services.js があるか、書式（カンマや引用符の過不足など）が正しいかを確認してください。',
+      'index.html と同じフォルダに services.js があるか、書式（カンマや引用符の過不足など）が正しいかを確認してください。初めて使う場合は、services.sample.js をコピーして services.js という名前で保存してください。',
     );
     return;
   }

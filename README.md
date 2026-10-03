@@ -20,7 +20,9 @@ Windows 11 の Google Chrome で動作を確認しています。
 | `index.html` | 画面。このファイルをブラウザで開きます |
 | `style.css` | デザイン（PCは複数列、スマートフォン幅は1列） |
 | `app.js` | 表示・検索・コピー・編集・保存などの処理 |
-| `services.js` | サービス情報。画面から保存すると上書きされます |
+| `services.js` | サービス情報。画面から保存すると上書きされます。実際の認証情報が入るため Git では管理しません（`.gitignore` で除外） |
+| `services.sample.js` | `services.js` の雛形（サンプルデータ）。最初にコピーして `services.js` を作ります |
+| `.gitignore` | `services.js` を Git の管理から除外する設定 |
 | `README.md` | このファイル |
 
 これらのファイルは同じフォルダに置いてください。
@@ -28,9 +30,16 @@ Windows 11 の Google Chrome で動作を確認しています。
 ## はじめて使うとき
 
 1. ポータルのフォルダを、自分だけがアクセスできる場所に置きます（例：`C:\Users\<ユーザー名>\Documents\saas-portal`）。
-2. `index.html` をダブルクリックして開きます。既定のブラウザが Edge・Chrome 以外の場合は、`index.html` を右クリックし、「プログラムから開く」から Microsoft Edge を選びます。
-3. 最初に入っているサンプルのサービスは、各カードの「編集」→「このサービスを削除」で削除し、「＋ 新規追加」から自分のサービスを登録します。
-4. 最初の保存のときに、保存先として `services.js` を選び、編集を許可します（[保存の仕組み](#保存の仕組み)を参照）。
+2. 雛形の `services.sample.js` を**コピー**して、同じフォルダに `services.js` を作ります。雛形は残しておくため、移動（`mv`）や名前の変更ではなくコピーしてください。
+   - エクスプローラーの場合：`services.sample.js` をコピーして同じフォルダに貼り付け、できたファイルの名前を `services.js` に変更します。
+   - PowerShell の場合：ポータルのフォルダで次を実行します。
+     ```powershell
+     Copy-Item services.sample.js services.js
+     ```
+   - Git Bash などの場合：`cp services.sample.js services.js`
+3. `index.html` をダブルクリックして開きます。既定のブラウザが Edge・Chrome 以外の場合は、`index.html` を右クリックし、「プログラムから開く」から Microsoft Edge を選びます。
+4. 最初に入っているサンプルのサービスは、各カードの「編集」→「このサービスを削除」で削除し、「＋ 新規追加」から自分のサービスを登録します。
+5. 最初の保存のときに、保存先として `services.js` を選び、編集を許可します（[保存の仕組み](#保存の仕組み)を参照）。`services.sample.js` は選ばないでください。
 
 ## おすすめの設定
 
@@ -180,4 +189,4 @@ Windows 11 の Google Chrome で動作を確認しています。
 - 外部のサーバーには何も送信しません。
 - データの文字列は `textContent` で描画し、HTMLとして解釈しません。
 - リンクはHTTP/HTTPSのURLだけを許可し、新しいタブには `rel="noopener noreferrer"` を付けています。
-- このフォルダを Git で管理する場合は、実際の認証情報を入れた `services.js` をコミットしないでください（`.gitignore` に追加するなど）。
+- `services.js` は `.gitignore` で Git の管理から除外しています。実際の認証情報を `services.sample.js` に書かないでください（雛形はコミットされます）。

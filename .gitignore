@@ -1,0 +1,2 @@
+# 実際の認証情報を含むため、Git で管理しない（services.sample.js をコピーして作成する）
+services.js
