@@ -4,6 +4,8 @@ const serviceList = document.getElementById('serviceList');
 const categoryFilter = document.getElementById('categoryFilter');
 const searchInput = document.getElementById('searchInput');
 const favoriteOnly = document.getElementById('favoriteOnly');
+const sortKey = document.getElementById('sortKey');
+const sortDirection = document.getElementById('sortDirection');
 const statusMessage = document.getElementById('statusMessage');
 const toast = document.getElementById('toast');
 
@@ -17,7 +19,11 @@ const editDialog = document.getElementById('editDialog');
 const editForm = document.getElementById('editForm');
 const editTitle = document.getElementById('editTitle');
 const editError = document.getElementById('editError');
-const editPasswordToggle = document.getElementById('editPasswordToggle');
+const editSecretToggle = document.getElementById('editSecretToggle');
+const editFieldList = document.getElementById('editFieldList');
+const addFieldButton = document.getElementById('addFieldButton');
+const addServiceButton = document.getElementById('addServiceButton');
+const deleteServiceButton = document.getElementById('deleteServiceButton');
 const categoryOptions = document.getElementById('categoryOptions');
 const accountLabelOptions = document.getElementById('accountLabelOptions');
 const editFields = {
@@ -25,14 +31,12 @@ const editFields = {
   category: document.getElementById('editCategory'),
   accountLabel: document.getElementById('editAccountLabel'),
   url: document.getElementById('editUrl'),
-  loginId: document.getElementById('editLoginId'),
-  password: document.getElementById('editPassword'),
   memo: document.getElementById('editMemo'),
   favorite: document.getElementById('editFavorite'),
 };
 
-// 伏せ字は文字数を固定し、パスワードの長さも画面に出さない
-const PASSWORD_MASK = '••••••••••';
+// 伏せ字は文字数を固定し、値の長さも画面に出さない
+const SECRET_MASK = '••••••••••';
 const UNCATEGORIZED = '未分類';
 const DATA_FILE_NAME = 'services.js';
 
@@ -56,8 +60,11 @@ let saveProblem = null; // 保存できなかった理由
 let autoSave = true; // 問題が起きたら、案内のボタンを押すまで自動保存しない
 let saveQueue = Promise.resolve();
 
-let editingId = null;
-const visiblePasswordIds = new Set();
+let editingId = null; // 編集中のサービスの id。新規追加中は ''、閉じているときは null
+let showSecretsInEdit = false;
+let draggingId = null;
+let sortDescending = false;
+const visibleSecrets = new Set(); // 表示中の伏せ項目（`${id}#${index}`）
 let toastTimer = null;
 
 // ---------- 共通 ----------
@@ -113,6 +120,19 @@ function toText(value) {
   return typeof value === 'string' ? value : String(value);
 }
 
+// fields がない古い形式（loginId・password）は、2つの項目として扱う
+function normalizeFields(raw) {
+  if (!Array.isArray(raw.fields)) {
+    return [
+      { label: 'ログインID', value: toText(raw.loginId), secret: false },
+      { label: 'パスワード', value: toText(raw.password), secret: true },
+    ];
+  }
+  return raw.fields
+    .filter((field) => field && typeof field === 'object')
+    .map((field) => ({ label: toText(field.label).trim(), value: toText(field.value), secret: field.secret === true }));
+}
+
 function normalizeService(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return null;
@@ -131,8 +151,7 @@ function normalizeService(raw) {
     accountLabel: toText(raw.accountLabel).trim(),
     url,
     safeUrl: toSafeUrl(url),
-    loginId: toText(raw.loginId),
-    password: toText(raw.password),
+    fields: normalizeFields(raw),
     memo: toText(raw.memo),
     favorite: raw.favorite === true,
   };
@@ -168,8 +187,54 @@ function applyChange(service, changes) {
   if (index === -1) {
     return;
   }
-  rawData[index] = { ...rawData[index], ...changes };
-  Object.assign(service, normalizeService(rawData[index]));
+  const next = { ...rawData[index], ...changes };
+  if ('fields' in changes) {
+    // 古い形式のキーは fields に置き換える
+    delete next.loginId;
+    delete next.password;
+    hideSecrets(service.id);
+  }
+  rawData[index] = next;
+  Object.assign(service, normalizeService(next));
+  changeVersion += 1;
+}
+
+function rawIndexOf(serviceId) {
+  return rawData.findIndex((item) => normalizeService(item)?.id === serviceId);
+}
+
+function createServiceId() {
+  let id;
+  do {
+    id = `service-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  } while (rawIndexOf(id) !== -1);
+  return id;
+}
+
+function addService(values) {
+  const raw = { id: createServiceId(), ...values };
+  rawData.push(raw);
+  const service = normalizeService(raw);
+  allServices.push(service);
+  changeVersion += 1;
+  return service;
+}
+
+function removeService(service) {
+  rawData.splice(rawIndexOf(service.id), 1);
+  allServices.splice(allServices.indexOf(service), 1);
+  hideSecrets(service.id);
+  changeVersion += 1;
+}
+
+// fromId のサービスを refId の直前（placeAfter なら直後）へ移動する（画面の並びと services.js の並びの両方）
+function moveService(fromId, refId, placeAfter) {
+  const move = (list, indexOf) => {
+    const [item] = list.splice(indexOf(fromId), 1);
+    list.splice(indexOf(refId) + (placeAfter ? 1 : 0), 0, item);
+  };
+  move(rawData, rawIndexOf);
+  move(allServices, (id) => allServices.findIndex((service) => service.id === id));
   changeVersion += 1;
 }
 
@@ -521,6 +586,42 @@ function getFilteredServices() {
   });
 }
 
+// 表示の並び順だけを変える（services.js の順番は変えない）。同じ値どうしは名前順
+function isCustomOrder() {
+  return sortKey.value === 'custom';
+}
+
+function sortServices(services) {
+  if (isCustomOrder()) {
+    return services;
+  }
+  const valueOf = sortKey.value === 'name' ? displayName : categoryOf;
+  const sign = sortDescending ? -1 : 1;
+  return [...services].sort(
+    (a, b) =>
+      sign * valueOf(a).localeCompare(valueOf(b), 'ja') || displayName(a).localeCompare(displayName(b), 'ja'),
+  );
+}
+
+// 昇順・降順のボタンは、名前やカテゴリで並べるときだけ表示する
+function updateSortDirection() {
+  sortDirection.hidden = isCustomOrder();
+  sortDirection.textContent = sortDescending ? '↓ 降順' : '↑ 昇順';
+  sortDirection.setAttribute('aria-label', sortDescending ? '降順で並べています。昇順に切り替える' : '昇順で並べています。降順に切り替える');
+}
+
+function handleSortKeyChange() {
+  sortDescending = false;
+  updateSortDirection();
+  renderServices();
+}
+
+function toggleSortDirection() {
+  sortDescending = !sortDescending;
+  updateSortDirection();
+  renderServices();
+}
+
 function hasActiveFilter() {
   return searchInput.value.trim() !== '' || categoryFilter.value !== 'all' || favoriteOnly.checked;
 }
@@ -582,16 +683,32 @@ function createField(labelText, valueNode, buttons = []) {
   return field;
 }
 
-function applyPasswordState(card, service) {
-  const valueNode = card.querySelector('.password-value');
-  const button = card.querySelector('[data-action="toggle-password"]');
-  const isVisible = visiblePasswordIds.has(service.id);
+function secretKey(serviceId, index) {
+  return `${serviceId}#${index}`;
+}
 
-  valueNode.textContent = isVisible ? service.password : PASSWORD_MASK;
-  valueNode.classList.toggle('masked', !isVisible);
-  button.textContent = isVisible ? '隠す' : '表示';
-  button.setAttribute('aria-pressed', String(isVisible));
-  button.setAttribute('aria-label', isVisible ? 'パスワードを隠す' : 'パスワードを表示');
+function hideSecrets(serviceId) {
+  Array.from(visibleSecrets)
+    .filter((key) => key.startsWith(`${serviceId}#`))
+    .forEach((key) => visibleSecrets.delete(key));
+}
+
+function fieldLabel(field) {
+  return field.label || '（項目名なし）';
+}
+
+function applySecretState(card, service) {
+  card.querySelectorAll('[data-action="toggle-secret"]').forEach((button) => {
+    const field = service.fields[button.dataset.index];
+    const valueNode = button.closest('.data-value').querySelector('.secret-value');
+    const isVisible = visibleSecrets.has(secretKey(service.id, button.dataset.index));
+
+    valueNode.textContent = isVisible ? field.value || '（未設定）' : SECRET_MASK;
+    valueNode.classList.toggle('masked', !isVisible);
+    button.textContent = isVisible ? '隠す' : '表示';
+    button.setAttribute('aria-pressed', String(isVisible));
+    button.setAttribute('aria-label', `${fieldLabel(field)}を${isVisible ? '隠す' : '表示'}`);
+  });
 }
 
 function createServiceCard(service) {
@@ -617,30 +734,31 @@ function createServiceCard(service) {
   // 本文
   const body = createElement('div', 'service-body');
 
-  let urlNode;
-  if (service.safeUrl) {
-    urlNode = createElement('a', 'service-link', service.url);
-    urlNode.href = service.safeUrl;
-    urlNode.target = '_blank';
-    urlNode.rel = 'noopener noreferrer';
-  } else {
-    urlNode = createElement('span', 'invalid-url', service.url || '（未設定）');
-    urlNode.title = 'HTTP/HTTPS 以外のURLは開けません';
+  // URL は任意（スマホのPINなど、サイトがないものもある）。空なら欄ごと出さない
+  if (service.url) {
+    let urlNode;
+    if (service.safeUrl) {
+      urlNode = createElement('a', 'service-link', service.url);
+      urlNode.href = service.safeUrl;
+      urlNode.target = '_blank';
+      urlNode.rel = 'noopener noreferrer';
+    } else {
+      urlNode = createElement('span', 'invalid-url', service.url);
+      urlNode.title = 'HTTP/HTTPS 以外のURLは開けません';
+    }
+    body.appendChild(createField('ログインURL', urlNode));
   }
-  body.appendChild(createField('ログインURL', urlNode));
 
-  body.appendChild(
-    createField('ログインID', createElement('span', '', service.loginId || '（未設定）'), [
-      createSmallButton('コピー', 'copy', { target: 'loginId' }),
-    ]),
-  );
-
-  body.appendChild(
-    createField('パスワード', createElement('span', 'password-value'), [
-      createSmallButton('表示', 'toggle-password'),
-      createSmallButton('コピー', 'copy', { target: 'password' }),
-    ]),
-  );
+  service.fields.forEach((field, index) => {
+    const buttons = [createSmallButton('コピー', 'copy', { index })];
+    if (field.secret) {
+      buttons.unshift(createSmallButton('表示', 'toggle-secret', { index }));
+    }
+    const valueNode = field.secret
+      ? createElement('span', 'secret-value')
+      : createElement('span', '', field.value || '（未設定）');
+    body.appendChild(createField(fieldLabel(field), valueNode, buttons));
+  });
 
   body.appendChild(createField('メモ', createElement('span', 'memo-text', service.memo || '—')));
   card.appendChild(body);
@@ -654,7 +772,7 @@ function createServiceCard(service) {
     openLink.rel = 'noopener noreferrer';
     openLink.setAttribute('aria-label', `${describe(service)}を新しいタブで開く`);
     footer.appendChild(openLink);
-  } else {
+  } else if (service.url) {
     const disabled = createElement('button', 'open-btn', 'URLが無効なため開けません');
     disabled.type = 'button';
     disabled.disabled = true;
@@ -668,7 +786,8 @@ function createServiceCard(service) {
   footer.appendChild(editButton);
   card.appendChild(footer);
 
-  applyPasswordState(card, service);
+  card.draggable = isCustomOrder(); // 名前順などで表示中はドラッグしない
+  applySecretState(card, service);
   return card;
 }
 
@@ -689,13 +808,13 @@ function createMessageBox(title, text, withReset = false) {
 function showLoadError(title, text) {
   serviceList.replaceChildren(createMessageBox(title, text));
   setStatus('サービス情報を読み込めませんでした。', 'error');
-  [searchInput, categoryFilter, favoriteOnly].forEach((control) => {
+  [searchInput, categoryFilter, sortKey, favoriteOnly, addServiceButton].forEach((control) => {
     control.disabled = true;
   });
 }
 
 function renderServices() {
-  const filtered = getFilteredServices();
+  const filtered = sortServices(getFilteredServices());
   const skippedNote = skippedCount ? `（不正なデータ ${skippedCount} 件は表示していません）` : '';
 
   if (!allServices.length) {
@@ -721,7 +840,8 @@ function renderServices() {
   const countText = hasActiveFilter()
     ? `${allServices.length} 件中 ${filtered.length} 件を表示しています。`
     : `${allServices.length} 件のサービスを表示しています。`;
-  setStatus(`${countText}${skippedNote}`);
+  const dragHint = isCustomOrder() ? 'カードはドラッグで並べ替えできます。' : '';
+  setStatus(`${countText}${skippedNote}${dragHint}`);
 }
 
 function focusEditButton(serviceId) {
@@ -762,13 +882,110 @@ async function toggleFavorite(service, button) {
   notifySaveResult(await saveAfterChange(), action);
 }
 
-function togglePassword(service, card) {
-  if (visiblePasswordIds.has(service.id)) {
-    visiblePasswordIds.delete(service.id);
+function toggleSecret(service, card, index) {
+  const key = secretKey(service.id, index);
+  if (visibleSecrets.has(key)) {
+    visibleSecrets.delete(key);
   } else {
-    visiblePasswordIds.add(service.id);
+    visibleSecrets.add(key);
   }
-  applyPasswordState(card, service);
+  applySecretState(card, service);
+}
+
+// ---------- 並べ替え（ドラッグ＆ドロップ） ----------
+
+// ドラッグ中はカードを実際に入れ替え、ほかのカードが押しのけられるように動かす。
+// ドロップした時点の並びを保存し、キャンセルした場合は元の並びに戻す
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+function cardIds() {
+  return Array.from(serviceList.querySelectorAll('.service-card'), (card) => card.dataset.id);
+}
+
+// DOM を変更した後、各カードを元の位置から新しい位置へアニメーションさせる（FLIP）
+function animateReorder(mutate) {
+  const cards = Array.from(serviceList.querySelectorAll('.service-card'));
+  const before = new Map(cards.map((card) => [card, card.getBoundingClientRect()]));
+  mutate();
+  if (prefersReducedMotion.matches) {
+    return;
+  }
+
+  cards.forEach((card) => {
+    const from = before.get(card);
+    const to = card.getBoundingClientRect();
+    const dx = from.left - to.left;
+    const dy = from.top - to.top;
+    if (!dx && !dy) {
+      return;
+    }
+    card.style.transition = 'none';
+    card.style.transform = `translate(${dx}px, ${dy}px)`;
+    card.getBoundingClientRect(); // 移動前の位置を描画に反映させる
+    card.style.transition = 'transform 0.2s ease';
+    card.style.transform = '';
+    // 動いている途中のカードの上では入れ替えない（行ったり来たりを防ぐ）
+    card.classList.add('moving');
+    setTimeout(() => {
+      card.classList.remove('moving');
+      card.style.transition = '';
+    }, 200);
+  });
+}
+
+function handleDragStart(event) {
+  const card = event.target.closest('.service-card');
+  if (!card) {
+    return;
+  }
+  draggingId = card.dataset.id;
+  event.dataTransfer.effectAllowed = 'move';
+  // ドラッグ中の画像が作られた後に、元の位置を「置き場所」の見た目にする
+  setTimeout(() => card.classList.add('dragging'), 0);
+}
+
+function handleDragOver(event) {
+  if (draggingId === null) {
+    return;
+  }
+  event.preventDefault();
+
+  const dragged = serviceList.querySelector('.service-card.dragging');
+  const target = event.target.closest('.service-card');
+  if (!dragged || !target || target === dragged || target.classList.contains('moving')) {
+    return;
+  }
+  const cards = Array.from(serviceList.children);
+  const isForward = cards.indexOf(dragged) < cards.indexOf(target);
+  animateReorder(() => (isForward ? target.after(dragged) : target.before(dragged)));
+}
+
+async function handleDrop(event) {
+  if (draggingId === null) {
+    return;
+  }
+  event.preventDefault();
+
+  const ids = cardIds();
+  const index = ids.indexOf(draggingId);
+  const before = sortServices(getFilteredServices()).map((service) => service.id);
+  if (ids.join('\n') === before.join('\n')) {
+    return; // 元の位置に戻しただけ
+  }
+
+  // 表示中の隣のカードを基準に移動する（絞り込み中でも、表示していないカードの順番は変えない）
+  if (index < ids.length - 1) {
+    moveService(draggingId, ids[index + 1], false);
+  } else {
+    moveService(draggingId, ids[index - 1], true);
+  }
+  notifySaveResult(await saveAfterChange(), '並び順を変更しました');
+}
+
+// データの並びで描き直す（キャンセルした場合は元の並びに戻る）
+function handleDragEnd() {
+  draggingId = null;
+  renderServices();
 }
 
 function handleListClick(event) {
@@ -792,16 +1009,14 @@ function handleListClick(event) {
     case 'toggle-favorite':
       toggleFavorite(service, button);
       break;
-    case 'toggle-password':
-      togglePassword(service, card);
+    case 'toggle-secret':
+      toggleSecret(service, card, button.dataset.index);
       break;
-    case 'copy':
-      if (button.dataset.target === 'loginId') {
-        copyText(service.loginId, 'ログインID');
-      } else {
-        copyText(service.password, 'パスワード');
-      }
+    case 'copy': {
+      const field = service.fields[button.dataset.index];
+      copyText(field.value, fieldLabel(field));
       break;
+    }
     case 'edit':
       openEditDialog(service);
       break;
@@ -812,45 +1027,124 @@ function handleListClick(event) {
 
 // ---------- 編集ダイアログ ----------
 
+const NEW_SERVICE = {
+  name: '',
+  category: '',
+  accountLabel: '',
+  url: '',
+  memo: '',
+  favorite: false,
+  fields: [
+    { label: 'ログインID', value: '', secret: false },
+    { label: 'パスワード', value: '', secret: true },
+  ],
+};
+
 function fillDatalist(datalist, values) {
   datalist.replaceChildren(...values.map((value) => new Option(value)));
 }
 
-function setEditPasswordVisible(isVisible) {
-  editFields.password.type = isVisible ? 'text' : 'password';
-  editPasswordToggle.textContent = isVisible ? '隠す' : '表示';
-  editPasswordToggle.setAttribute('aria-pressed', String(isVisible));
-  editPasswordToggle.setAttribute('aria-label', isVisible ? 'パスワードを隠す' : 'パスワードを表示');
+function updateFieldValueType(row) {
+  const isSecret = row.querySelector('.field-secret').checked;
+  row.querySelector('.field-value').type = isSecret && !showSecretsInEdit ? 'password' : 'text';
+}
+
+function setEditSecretsVisible(isVisible) {
+  showSecretsInEdit = isVisible;
+  editSecretToggle.textContent = isVisible ? '伏せた値を隠す' : '伏せた値を表示';
+  editSecretToggle.setAttribute('aria-pressed', String(isVisible));
+  Array.from(editFieldList.children).forEach(updateFieldValueType);
+}
+
+// 1行＝「項目名・値・伏せる・削除」
+function createFieldRow(field) {
+  const row = createElement('div', 'field-row');
+
+  const label = createElement('input', 'field-name');
+  label.type = 'text';
+  label.value = field.label;
+  label.maxLength = 200;
+  label.autocomplete = 'off';
+  label.placeholder = '項目名（例：メールアドレス）';
+  label.setAttribute('aria-label', '項目名');
+
+  const value = createElement('input', 'field-value');
+  value.value = field.value;
+  value.maxLength = 2000;
+  value.autocomplete = 'off';
+  value.spellcheck = false;
+  value.setAttribute('aria-label', '値');
+
+  const secretLabel = createElement('label', 'secret-check');
+  const secret = createElement('input', 'field-secret');
+  secret.type = 'checkbox';
+  secret.checked = field.secret;
+  secretLabel.append(secret, '伏せる');
+
+  const remove = createSmallButton('削除', 'remove-field');
+  remove.setAttribute('aria-label', 'この項目を削除');
+
+  row.append(label, value, secretLabel, remove);
+  updateFieldValueType(row);
+  return row;
+}
+
+function handleFieldListClick(event) {
+  const button = event.target.closest('[data-action="remove-field"]');
+  if (!button) {
+    return;
+  }
+  const row = button.closest('.field-row');
+  const label = row.querySelector('.field-name').value.trim();
+  if (window.confirm(label ? `項目「${label}」を削除しますか？` : 'この項目を削除しますか？')) {
+    row.remove();
+  }
+}
+
+function handleFieldListChange(event) {
+  if (event.target.classList.contains('field-secret')) {
+    updateFieldValueType(event.target.closest('.field-row'));
+  }
+}
+
+function addFieldRow() {
+  const row = createFieldRow({ label: '', value: '', secret: false });
+  editFieldList.appendChild(row);
+  row.querySelector('.field-name').focus();
 }
 
 function showEditError(message, field) {
   editError.textContent = message;
-  Object.values(editFields).forEach((input) => input.removeAttribute('aria-invalid'));
+  editForm.querySelectorAll('[aria-invalid]').forEach((input) => input.removeAttribute('aria-invalid'));
   if (field) {
     field.setAttribute('aria-invalid', 'true');
     field.focus();
   }
 }
 
+// service が null のときは新規追加
 function openEditDialog(service) {
-  editingId = service.id;
-  editTitle.textContent = `${describe(service)}を編集`;
+  const source = service || NEW_SERVICE;
+  editingId = service ? service.id : '';
+  editTitle.textContent = service ? `${describe(service)}を編集` : '新しいサービスを追加';
+  deleteServiceButton.hidden = !service;
 
-  ['name', 'category', 'accountLabel', 'url', 'loginId', 'password', 'memo'].forEach((key) => {
-    editFields[key].value = service[key];
+  ['name', 'category', 'accountLabel', 'url', 'memo'].forEach((key) => {
+    editFields[key].value = source[key];
   });
-  editFields.favorite.checked = service.favorite;
+  editFields.favorite.checked = source.favorite;
+  editFieldList.replaceChildren(...source.fields.map(createFieldRow));
 
   fillDatalist(categoryOptions, uniqueSorted(allServices.map((item) => item.category)));
   fillDatalist(accountLabelOptions, uniqueSorted(allServices.map((item) => item.accountLabel)));
-  setEditPasswordVisible(false);
+  setEditSecretsVisible(false);
   showEditError('');
 
   editDialog.showModal();
   editFields.name.focus();
 }
 
-// 閉じたらフォームに入力値を残さず、編集ボタンにフォーカスを戻す
+// 閉じたらフォームに入力値を残さず、元のボタンにフォーカスを戻す
 function finishEditing() {
   if (editingId === null) {
     return;
@@ -858,9 +1152,14 @@ function finishEditing() {
   const closedId = editingId;
   editingId = null;
   editForm.reset();
-  setEditPasswordVisible(false);
+  editFieldList.replaceChildren();
+  setEditSecretsVisible(false);
   showEditError('');
-  focusEditButton(closedId);
+  if (closedId) {
+    focusEditButton(closedId);
+  } else {
+    addServiceButton.focus();
+  }
 }
 
 function closeEditDialog() {
@@ -871,41 +1170,74 @@ function closeEditDialog() {
 }
 
 function readEditForm() {
+  const fields = Array.from(editFieldList.children)
+    .map((row) => ({
+      label: row.querySelector('.field-name').value.trim(),
+      value: row.querySelector('.field-value').value,
+      secret: row.querySelector('.field-secret').checked,
+    }))
+    .filter((field) => field.label || field.value);
+
   return {
     name: editFields.name.value.trim(),
     category: editFields.category.value.trim(),
     accountLabel: editFields.accountLabel.value.trim(),
     url: editFields.url.value.trim(),
-    loginId: editFields.loginId.value,
-    password: editFields.password.value,
+    fields,
     memo: editFields.memo.value,
     favorite: editFields.favorite.checked,
   };
 }
 
+// 入力に問題があればエラーを表示して false を返す
+function validateEditForm(values) {
+  if (!values.name) {
+    showEditError('サービス名を入力してください。', editFields.name);
+    return false;
+  }
+  if (values.url && !toSafeUrl(values.url)) {
+    showEditError('ログインURLは空欄にするか、http:// または https:// で始まるURLを入力してください。', editFields.url);
+    return false;
+  }
+  const unnamed = Array.from(editFieldList.querySelectorAll('.field-name')).find(
+    (input) => !input.value.trim() && input.closest('.field-row').querySelector('.field-value').value,
+  );
+  if (unnamed) {
+    showEditError('項目名を入力してください。', unnamed);
+    return false;
+  }
+  return true;
+}
+
 async function handleEditSubmit(event) {
   event.preventDefault();
 
-  const service = findServiceById(editingId);
-  if (!service) {
+  const isNew = editingId === '';
+  const service = isNew ? null : findServiceById(editingId);
+  if (!isNew && !service) {
     closeEditDialog();
     return;
   }
 
   const values = readEditForm();
-  if (!values.name) {
-    showEditError('サービス名を入力してください。', editFields.name);
+  if (!validateEditForm(values)) {
     return;
   }
-  if (!toSafeUrl(values.url)) {
-    showEditError('ログインURLは http:// または https:// で始まるURLを入力してください。', editFields.url);
+
+  if (isNew) {
+    // 閉じた後は、追加したサービスの編集ボタンにフォーカスを移す
+    editingId = addService(values).id;
+    populateCategoryOptions();
+    renderServices();
+    closeEditDialog();
+    notifySaveResult(await saveAfterChange(), 'サービスを追加しました');
     return;
   }
 
   // 変更した項目だけを反映する
   const changes = {};
   Object.entries(values).forEach(([key, value]) => {
-    if (value !== service[key]) {
+    if (JSON.stringify(value) !== JSON.stringify(service[key])) {
       changes[key] = value;
     }
   });
@@ -920,6 +1252,20 @@ async function handleEditSubmit(event) {
   renderServices();
   closeEditDialog();
   notifySaveResult(await saveAfterChange(), '変更を反映しました');
+}
+
+async function handleDeleteService() {
+  const service = findServiceById(editingId);
+  if (!service || !window.confirm(`「${describe(service)}」を削除しますか？`)) {
+    return;
+  }
+
+  removeService(service);
+  editingId = ''; // 閉じた後は「新規追加」にフォーカスを移す
+  populateCategoryOptions();
+  renderServices();
+  closeEditDialog();
+  notifySaveResult(await saveAfterChange(), 'サービスを削除しました');
 }
 
 // ---------- 初期化 ----------
@@ -959,8 +1305,15 @@ function loadInitialData() {
 function bindEvents() {
   searchInput.addEventListener('input', renderServices);
   categoryFilter.addEventListener('change', renderServices);
+  sortKey.addEventListener('change', handleSortKeyChange);
+  sortDirection.addEventListener('click', toggleSortDirection);
   favoriteOnly.addEventListener('change', renderServices);
   serviceList.addEventListener('click', handleListClick);
+  serviceList.addEventListener('dragstart', handleDragStart);
+  serviceList.addEventListener('dragover', handleDragOver);
+  serviceList.addEventListener('drop', handleDrop);
+  serviceList.addEventListener('dragend', handleDragEnd);
+  addServiceButton.addEventListener('click', () => openEditDialog(null));
 
   saveNowButton.addEventListener('click', handleSaveNow);
   chooseFileButton.addEventListener('click', handleChooseFile);
@@ -972,9 +1325,11 @@ function bindEvents() {
   editDialog.querySelectorAll('[data-dialog-close]').forEach((button) => {
     button.addEventListener('click', closeEditDialog);
   });
-  editPasswordToggle.addEventListener('click', () => {
-    setEditPasswordVisible(editFields.password.type === 'password');
-  });
+  editSecretToggle.addEventListener('click', () => setEditSecretsVisible(!showSecretsInEdit));
+  editFieldList.addEventListener('click', handleFieldListClick);
+  editFieldList.addEventListener('change', handleFieldListChange);
+  addFieldButton.addEventListener('click', addFieldRow);
+  deleteServiceButton.addEventListener('click', handleDeleteService);
 
   window.addEventListener('beforeunload', (event) => {
     if (hasPendingChanges()) {

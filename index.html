@@ -53,10 +53,24 @@
             </select>
           </label>
 
+          <div class="filter-field">
+            <label class="label-text" for="sortKey">並び順</label>
+            <div class="sort-control">
+              <select id="sortKey">
+                <option value="custom">自分で並べた順</option>
+                <option value="name">名前</option>
+                <option value="category">カテゴリ</option>
+              </select>
+              <button id="sortDirection" type="button" class="sort-direction-btn" hidden></button>
+            </div>
+          </div>
+
           <label class="favorite-field">
             <input id="favoriteOnly" type="checkbox" />
             <span>お気に入りのみ</span>
           </label>
+
+          <button id="addServiceButton" type="button" class="primary-btn">＋ 新規追加</button>
         </section>
 
         <p id="statusMessage" class="status-message" role="status"></p>
@@ -90,21 +104,17 @@
             </label>
 
             <label class="form-field span-2">
-              <span class="label-text">ログインURL <span class="required">必須</span></span>
+              <span class="label-text">ログインURL</span>
               <input id="editUrl" type="url" inputmode="url" maxlength="2000" autocomplete="off" spellcheck="false" placeholder="https://" />
             </label>
 
-            <label class="form-field span-2">
-              <span class="label-text">ログインID</span>
-              <input id="editLoginId" type="text" maxlength="2000" autocomplete="off" spellcheck="false" />
-            </label>
-
             <div class="form-field span-2">
-              <label class="label-text" for="editPassword">パスワード</label>
-              <div class="password-input">
-                <input id="editPassword" type="password" maxlength="2000" autocomplete="off" spellcheck="false" />
-                <button id="editPasswordToggle" type="button" class="inline-btn" aria-pressed="false">表示</button>
+              <div class="fields-header">
+                <span class="label-text">ログイン項目（ID・メールアドレス・パスワードなど）</span>
+                <button id="editSecretToggle" type="button" class="inline-btn" aria-pressed="false">伏せた値を表示</button>
               </div>
+              <div id="editFieldList" class="field-editor"></div>
+              <button id="addFieldButton" type="button" class="inline-btn add-field-btn">＋ 項目を追加</button>
             </div>
 
             <label class="form-field span-2">
@@ -123,6 +133,7 @@
         </div>
 
         <div class="dialog-footer">
+          <button id="deleteServiceButton" type="button" class="danger-btn">このサービスを削除</button>
           <button type="button" class="secondary-btn" data-dialog-close>キャンセル</button>
           <button type="submit" class="primary-btn">保存</button>
         </div>
