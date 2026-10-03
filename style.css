@@ -90,17 +90,7 @@ h1 {
   line-height: 1.3;
 }
 
-.mock-badge {
-  margin: 0;
-  background: var(--warning-bg);
-  border: 1px solid var(--warning-border);
-  border-radius: 999px;
-  color: var(--warning-text);
-  font-weight: 700;
-  padding: 8px 16px;
-}
-
-.mock-note {
+.page-note {
   margin: 14px 0 24px;
   color: var(--subtle);
   font-size: 0.88rem;
@@ -152,9 +142,13 @@ h1 {
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(160px, 1fr) auto;
+  grid-template-columns: minmax(0, 2fr) minmax(140px, 1fr) minmax(200px, 1fr) auto auto;
   gap: 14px;
   align-items: end;
+}
+
+.toolbar .primary-btn {
+  min-height: 46px;
 }
 
 .search-field,
@@ -169,6 +163,27 @@ h1 {
   font-size: 0.82rem;
   color: var(--subtle);
   font-weight: 700;
+}
+
+.sort-control {
+  display: flex;
+  gap: 6px;
+}
+
+.sort-direction-btn {
+  flex: none;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--panel);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sort-direction-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .search-field input,
@@ -239,6 +254,21 @@ h1 {
   border-radius: var(--radius);
   box-shadow: 0 2px 8px rgba(28, 42, 61, 0.04);
   overflow: hidden;
+}
+
+.service-card[draggable="true"] {
+  cursor: grab;
+}
+
+/* ドラッグで並べ替え：元のカードは「置き場所」として点線で表示する */
+.service-card.dragging {
+  border: 2px dashed var(--primary);
+  background: var(--primary-soft);
+  box-shadow: none;
+}
+
+.service-card.dragging > * {
+  visibility: hidden;
 }
 
 .service-card-header {
@@ -347,11 +377,11 @@ h1 {
   font-size: 0.92rem;
 }
 
-.password-value {
+.secret-value {
   font-family: Consolas, "SFMono-Regular", Menlo, monospace;
 }
 
-.password-value.masked {
+.secret-value.masked {
   letter-spacing: 0.08em;
   color: var(--subtle);
 }
@@ -437,6 +467,11 @@ button.open-btn:disabled {
   background: var(--panel);
   font-weight: 600;
   transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+/* URL がなく「サービスを開く」がないときは、編集ボタンを横いっぱいにする */
+.service-card-footer .edit-btn:only-child {
+  flex: 1;
 }
 
 .edit-btn:hover,
@@ -564,20 +599,62 @@ button.open-btn:disabled {
   border-color: var(--danger);
 }
 
-.password-input {
+/* ログイン項目のエディタ：1行＝「項目名・値・伏せる・削除」 */
+.fields-header {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.field-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto auto;
+  grid-template-areas: "name value secret remove";
   gap: 8px;
   align-items: center;
 }
 
-.password-input input {
-  flex: 1;
-  min-width: 0;
+.field-row .field-name {
+  grid-area: name;
+}
+
+.field-row .field-value {
+  grid-area: value;
   font-family: Consolas, "SFMono-Regular", Menlo, monospace;
 }
 
-.password-input .inline-btn {
+.field-row .secret-check {
+  grid-area: secret;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.field-row .secret-check input {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.field-row [data-action="remove-field"] {
+  grid-area: remove;
   min-height: 42px;
+}
+
+.add-field-btn {
+  align-self: flex-start;
 }
 
 .edit-dialog .favorite-field {
@@ -621,6 +698,21 @@ button.open-btn:disabled {
 
 .primary-btn:hover {
   background: var(--primary-hover);
+}
+
+.danger-btn {
+  margin-right: auto;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.danger-btn:hover {
+  border-color: #f0c4c4;
+  background: #fdecec;
 }
 
 /* ---------- メッセージ ---------- */
@@ -693,6 +785,18 @@ button.open-btn:disabled {
   text-align: center;
 }
 
+/* ---------- 中間の幅：ツールバーを2段にする ---------- */
+
+@media (max-width: 1000px) {
+  .toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) auto auto;
+  }
+
+  .search-field {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ---------- スマートフォン ---------- */
 
 @media (max-width: 720px) {
@@ -715,6 +819,13 @@ button.open-btn:disabled {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .field-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "name secret remove"
+      "value value value";
   }
 
   .dialog-header,
