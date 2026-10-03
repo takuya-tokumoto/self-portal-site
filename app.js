@@ -242,7 +242,7 @@ function moveService(fromId, refId, placeAfter) {
 
 function buildServicesScript(data) {
   return [
-    '// SaaS 管理ポータル（モック）のサービス情報です。すべて架空のデータです。',
+    '// SaaS 管理ポータルのサービス情報です。',
     '// 画面から保存すると、このファイルは上書きされます。',
     '// 手で編集するときは、[ ] の中を JSON の形式で書いてください。',
     `window.SERVICES = ${JSON.stringify(data, null, 2)};`,
